@@ -19,7 +19,8 @@ function auth(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
-  } catch {
+  } catch (err) {
+    console.log("❌ Auth error:", err.message);
     return res.status(401).json({ success: false, message: "Invalid token" });
   }
 }
@@ -37,6 +38,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // ✅ تحديد حجم 5MB
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith("image/")) {
       cb(null, true);
@@ -66,7 +68,7 @@ router.post(
         });
       }
 
-      if (!req.files["id_image"] || !req.files["selfie_image"]) {
+      if (!req.files || !req.files["id_image"] || !req.files["selfie_image"]) {
         return res.status(400).json({
           success: false,
           message: "الصور مطلوبة",
@@ -124,7 +126,7 @@ router.post(
       });
 
     } catch (error) {
-      console.error(error);
+      console.error("❌ Register company error:", error.message);
       res.status(500).json({
         success: false,
         message: "حصل خطأ في السيرفر",
@@ -133,4 +135,4 @@ router.post(
   }
 );
 
-module.exports = router
+module.exports = router;

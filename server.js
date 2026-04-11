@@ -1,40 +1,73 @@
+require("dotenv").config();
+
+const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
-const express = require("express");
-const nodemailer = require("nodemailer"); // ✅ إضافة
+const nodemailer = require("nodemailer");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔥 عرض الصور
+// 🔥 ADD (auth routes)
+const authRoutes = require("./routes/auth");
+
+// static
 app.use("/uploads", express.static("uploads"));
 
-// 🔥 routes الشركات
+// routes
 const companyRoutes = require("./routes/company");
 app.use("/api/company", companyRoutes);
 
-const PORT = 3000;
-const JWT_SECRET = "super_secret_key";
+//////////////////////////////////////////////////////
+// CONFIG
+//////////////////////////////////////////////////////
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || "secret";
 
 //////////////////////////////////////////////////////
-// EMAIL CONFIG 🔥 (إضافة فقط)
+// EMAIL (🔥 رجعنا القديم + تحسين)
 //////////////////////////////////////////////////////
+let transporter;
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: "your_email@gmail.com",
-    pass: "your_app_password",
-  },
-});
+try {
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  transporter.verify((error) => {
+    if (error) {
+      console.log("❌ Email error:", error.message);
+    } else {
+      console.log("📩 Email server ready");
+    }
+  });
+} catch (e) {
+  console.log("❌ Email setup failed");
+}
 
 //////////////////////////////////////////////////////
-// MIDDLEWARE 🔐
+// DB TEST (🔥 مهم جداً)
 //////////////////////////////////////////////////////
+(async () => {
+  try {
+    const client = await pool.connect();
+    console.log("✅ PostgreSQL Connected");
+    client.release();
+  } catch (err) {
+    console.log("❌ DB Error:", err.message);
+  }
+})();
 
+//////////////////////////////////////////////////////
+// AUTH
+//////////////////////////////////////////////////////
 function auth(req, res, next) {
   const header = req.headers["authorization"];
 
@@ -48,40 +81,61 @@ function auth(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
-  } catch {
+  } catch (err) {
+    console.log("❌ Auth error:", err.message);
     return res.status(401).json({ success: false, message: "Invalid token" });
   }
 }
 
 //////////////////////////////////////////////////////
-// REGISTER
+// FORMAT PHONE
 //////////////////////////////////////////////////////
+function formatPhone(phone) {
+  phone = phone.trim();
 
-app.post("/register", async (req, res) => {
-  const { name, phone, email, password } = req.body;
+  if (phone.startsWith("+")) return phone;
 
-  if (!email || !password) {
-    return res.json({ success: false, message: "بيانات ناقصة" });
+  if (phone.startsWith("0")) {
+    phone = phone.substring(1);
   }
 
+  return "+249" + phone;
+}
+
+//////////////////////////////////////////////////////
+// REGISTER (🔥 رجعنا username + OTP + بدون تخريب)
+//////////////////////////////////////////////////////
+app.post("/api/auth/register", async (req, res) => {
+  let { username, phone, email, password } = req.body;
+
   try {
+    if (!username || !email || !password || password.length < 6 || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "بيانات غير صحيحة",
+      });
+    }
+
+    phone = formatPhone(phone);
+
     const exist = await pool.query(
-      "SELECT * FROM users WHERE email=$1",
-      [email]
+      "SELECT id FROM users WHERE email=$1 OR username=$2 OR phone=$3",
+      [email, username, phone]
     );
 
     if (exist.rows.length > 0) {
-      return res.json({ success: false, message: "الإيميل مستخدم" });
+      return res.status(400).json({
+        success: false,
+        message: "الايميل أو اسم المستخدم أو الرقم مستخدم",
+      });
     }
 
     const hashed = await bcrypt.hash(password, 10);
 
-    // ✅ إضافة OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
     const result = await pool.query(
-      "INSERT INTO users(name, phone, email, password, is_verified, status, otp_code) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id",
-      [name, phone, email, hashed, false, "pending", otp]
+      `INSERT INTO users(username, phone, email, password, is_verified)
+       VALUES($1,$2,$3,$4,$5) RETURNING id`,
+      [username, phone, email, hashed, true]
     );
 
     const userId = result.rows[0].id;
@@ -91,116 +145,60 @@ app.post("/register", async (req, res) => {
       [userId, 0]
     );
 
-    // ✅ إرسال الإيميل
-    await transporter.sendMail({
-      from: "your_email@gmail.com",
-      to: email,
-      subject: "كود التحقق",
-      text:` كود التحقق الخاص بك هو: ${otp},`
+    return res.status(201).json({
+      success: true,
+      message: "تم إنشاء الحساب",
     });
 
-    console.log("✅ Email sent");
-
-    res.json({ success: true });
-
   } catch (e) {
-    console.log(e);
-    res.json({ success: false, message: "خطأ في السيرفر" });
-  }
-});
-
-//////////////////////////////////////////////////////
-// VERIFY (إضافة فقط)
-//////////////////////////////////////////////////////
-
-app.post("/verify", async (req, res) => {
-  const { email, code } = req.body;
-
-  try {
-    const result = await pool.query(
-      "SELECT * FROM users WHERE email=$1",
-      [email]
-    );
-
-    if (result.rows.length === 0) {
-      return res.json({ success: false });
-    }
-
-    const user = result.rows[0];
-
-    if (user.otp_code !== code) {
-      return res.json({ success: false, message: "كود خاطئ" });
-    }
-
-    await pool.query(
-      "UPDATE users SET is_verified=true WHERE email=$1",
-      [email]
-    );
-
-    res.json({ success: true });
-
-  } catch (e) {
-    console.log(e);
-    res.json({ success: false });
-  }
-});
-
-//////////////////////////////////////////////////////
-// 🔥 RESEND OTP (إضافة فقط)
-//////////////////////////////////////////////////////
-
-app.post("/resend", async (req, res) => {
-  const { email } = req.body;
-
-  try {
-    const result = await pool.query(
-      "SELECT * FROM users WHERE email=$1",
-      [email]
-    );
-
-    if (result.rows.length === 0) {
-      return res.json({ success: false });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    await pool.query(
-      "UPDATE users SET otp_code=$1 WHERE email=$2",
-      [otp, email]
-    );
-
-    await transporter.sendMail({
-      from: "your_email@gmail.com",
-      to: email,
-      subject: "كود التحقق الجديد",
-      text:` الكود الجديد: ${otp},`
+    console.error("❌ Register error:", e.message);
+    return res.status(500).json({
+      success: false,
+      message: "خطأ في السيرفر",
     });
-
-    console.log("📩 OTP resent");
-
-    res.json({ success: true });
-
-  } catch (e) {
-    console.log(e);
-    res.json({ success: false });
   }
 });
 
 //////////////////////////////////////////////////////
-// LOGIN
+// LOGIN (🔥 أقوى نسخة)
 //////////////////////////////////////////////////////
-
-app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+app.post("/api/auth/login", async (req, res) => {
+  let { username, email, phone, password } = req.body;
 
   try {
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: "أدخل كلمة المرور",
+      });
+    }
+
+    let identifier = username || email || phone;
+
+    if (!identifier) {
+      return res.status(400).json({
+        success: false,
+        message: "أدخل بيانات الدخول",
+      });
+    }
+
+    identifier = identifier.trim();
+
+    if (/^[0-9]+$/.test(identifier)) {
+      identifier = formatPhone(identifier);
+    }
+
     const users = await pool.query(
-      "SELECT * FROM users WHERE email=$1",
-      [email]
+      `SELECT * FROM users 
+       WHERE username=$1 OR email=$1 OR phone=$1`,
+      [identifier]
     );
 
     if (users.rows.length === 0) {
-      return res.json({ success: false, message: "بيانات خاطئة" });
+      return res.status(400).json({
+        success: false,
+        message: "المستخدم غير موجود",
+      });
     }
 
     const user = users.rows[0];
@@ -208,187 +206,62 @@ app.post("/login", async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
 
     if (!valid) {
-      return res.json({ success: false, message: "بيانات خاطئة" });
-    }
-
-    if (!user.is_verified) {
-      return res.json({ success: false, message: "الحساب غير مفعل" });
-    }
-
-    if (user.status === "pending") {
-      return res.json({
+      return res.status(400).json({
         success: false,
-        message: "الحساب قيد المراجعة",
+        message: "كلمة المرور غلط",
       });
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { id: user.id, phone: user.phone },
       JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    res.json({
+    delete user.password;
+
+    return res.json({
       success: true,
       token,
-      user: user,
+      user,
     });
 
   } catch (e) {
-    console.log(e);
-    res.json({ success: false, message: "خطأ في السيرفر" });
+    console.log("❌ Login error:", e.message);
+    return res.status(500).json({
+      success: false,
+      message: "خطأ في السيرفر",
+    });
   }
 });
 
 //////////////////////////////////////////////////////
 // WALLET
 //////////////////////////////////////////////////////
-
-app.get("/wallet/:userId", auth, async (req, res) => {
-  const { userId } = req.params;
-
+app.get("/api/wallet", auth, async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT balance FROM wallets WHERE user_id=$1",
-      [userId]
+      [req.user.id]
     );
 
-    res.json({
+    return res.json({
       success: true,
       balance: result.rows[0]?.balance || 0,
     });
 
   } catch (e) {
-    console.log(e);
-    res.json({ success: false });
-  }
-});
-
-//////////////////////////////////////////////////////
-// DEPOSITS
-//////////////////////////////////////////////////////
-
-app.post("/deposits/create", auth, async (req, res) => {
-  const { amount } = req.body;
-  const userId = req.user.id;
-
-  try {
-    await pool.query(
-      "INSERT INTO deposit_requests(user_id, amount, status) VALUES($1,$2,'pending')",
-      [userId, amount]
-    );
-
-    res.json({ success: true });
-
-  } catch (e) {
-    console.log(e);
-    res.json({ success: false });
-  }
-});
-
-app.post("/admin/deposits/approve", auth, async (req, res) => {
-  const { request_id } = req.body;
-
-  if (req.user.email !== "admin@app.com") {
-    return res.json({ success: false, message: "غير مصرح" });
-  }
-
-  try {
-    const rows = await pool.query(
-      "SELECT * FROM deposit_requests WHERE id=$1",
-      [request_id]
-    );
-
-    const request = rows.rows[0];
-
-    if (!request) return res.json({ success: false });
-
-    await pool.query(
-      "UPDATE wallets SET balance = balance + $1 WHERE user_id=$2",
-      [request.amount, request.user_id]
-    );
-
-    await pool.query(
-      "UPDATE deposit_requests SET status='approved' WHERE id=$1",
-      [request_id]
-    );
-
-    res.json({ success: true });
-
-  } catch (e) {
-    console.log(e);
-    res.json({ success: false });
-  }
-});
-
-//////////////////////////////////////////////////////
-// SEARCH USERS (ADMIN)
-//////////////////////////////////////////////////////
-
-app.post("/admin/search-users", auth, async (req, res) => {
-  const { email, id, wallet, name } = req.body;
-
-  if (req.user.email !== "admin@app.com") {
-    return res.json({ success: false, message: "غير مصرح" });
-  }
-
-  try {
-    let conditions = [];
-    let values = [];
-    let index = 1;
-
-    if (email) {
-      conditions.push(`users.email = $${index++}`);
-      values.push(email);
-    }
-
-    if (id) {
-      conditions.push(`users.id = $${index++}`);
-      values.push(id);
-    }
-
-    if (name) {
-      conditions.push(`users.name ILIKE $${index++}`);
-      values.push(`%${name}%`);
-    }
-
-    if (wallet) {
-      conditions.push(`wallets.id = $${index++}`);
-      values.push(wallet);
-    }
-
-    if (conditions.length === 0) {
-      return res.json({
-        success: false,
-        message: "أدخل حقل واحد على الأقل",
-      });
-    }
-
-    const query = `
-      SELECT users.*, wallets.id AS wallet_id, wallets.balance
-      FROM users
-      LEFT JOIN wallets ON wallets.user_id = users.id
-      WHERE ${conditions.join(" AND ")}
-    `;
-
-    const result = await pool.query(query, values);
-
-    res.json({
-      success: true,
-      count: result.rows.length,
-      data: result.rows,
+    console.log("❌ Wallet error:", e.message);
+    return res.status(500).json({
+      success: false,
+      message: "خطأ في السيرفر",
     });
-
-  } catch (e) {
-    console.log(e);
-    res.json({ success: false, message: "خطأ في السيرفر" });
   }
 });
 
 //////////////////////////////////////////////////////
 // SERVER
 //////////////////////////////////////////////////////
-
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log("🚀 Server running on port " + PORT);
 });

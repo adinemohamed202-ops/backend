@@ -1,22 +1,26 @@
 const { Pool } = require("pg");
 
-// إنشاء الاتصال
 const pool = new Pool({
-  user: "postgres",
-  host: "localhost",
-  database: "awda_transport",
-  password: "Adine2002$", // نفس الباسورد حق PgAdmin
-  port: 5432,
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    require: true,
+    rejectUnauthorized: false,
+  },
 });
 
 // اختبار الاتصال
-pool.connect((err, client, release) => {
-  if (err) {
+(async () => {
+  try {
+    const client = await pool.connect();
+    console.log("✅ PostgreSQL Connected Successfully");
+    client.release();
+  } catch (err) {
     console.error("❌ Database connection failed:", err.message);
-  } else {
-    console.log("✅ PostgreSQL Connected");
-    release();
   }
+});
+
+pool.on("error", (err) => {
+  console.error("❌ Unexpected DB error:", err.message);
 });
 
 module.exports = pool;
