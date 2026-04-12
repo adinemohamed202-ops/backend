@@ -14,7 +14,16 @@ app.use(express.json());
 // static
 app.use("/uploads", express.static("uploads"));
 
-// routes
+//////////////////////////////////////////////////////
+// ROOT (مهم جداً)
+//////////////////////////////////////////////////////
+app.get("/", (req, res) => {
+  res.send("🚀 API is running");
+});
+
+//////////////////////////////////////////////////////
+// ROUTES
+//////////////////////////////////////////////////////
 const companyRoutes = require("./routes/company");
 app.use("/api/company", companyRoutes);
 
@@ -100,7 +109,7 @@ function formatPhone(phone) {
 }
 
 //////////////////////////////////////////////////////
-// REGISTER (FIXED ✅)
+// REGISTER
 //////////////////////////////////////////////////////
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -115,7 +124,6 @@ app.post("/api/auth/register", async (req, res) => {
 
     phone = formatPhone(phone);
 
-    // check existing
     const exist = await pool.query(
       "SELECT id FROM users WHERE email=$1 OR username=$2 OR phone=$3",
       [email, username, phone]
@@ -128,10 +136,8 @@ app.post("/api/auth/register", async (req, res) => {
       });
     }
 
-    // hash password
     const hashed = await bcrypt.hash(password, 10);
 
-    // create user
     const result = await pool.query(
       `INSERT INTO users(username, phone, email, password, is_verified)
        VALUES($1,$2,$3,$4,$5) RETURNING id`,
@@ -140,7 +146,6 @@ app.post("/api/auth/register", async (req, res) => {
 
     const userId = result.rows[0].id;
 
-    // create wallet
     await pool.query(
       "INSERT INTO wallets(user_id, balance) VALUES($1,$2)",
       [userId, 0]
@@ -161,7 +166,7 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 //////////////////////////////////////////////////////
-// LOGIN (UPDATED 🔥)
+// LOGIN
 //////////////////////////////////////////////////////
 app.post("/api/auth/login", async (req, res) => {
   try {
@@ -258,6 +263,16 @@ app.get("/api/wallet", auth, async (req, res) => {
       message: "خطأ في السيرفر",
     });
   }
+});
+
+//////////////////////////////////////////////////////
+// 404 HANDLER
+//////////////////////////////////////////////////////
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
 });
 
 //////////////////////////////////////////////////////
