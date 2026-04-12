@@ -11,9 +11,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔥 ADD (auth routes)
-const authRoutes = require("./routes/auth");
-
 // static
 app.use("/uploads", express.static("uploads"));
 
@@ -28,7 +25,7 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
 
 //////////////////////////////////////////////////////
-// EMAIL (🔥 رجعنا القديم + تحسين)
+// EMAIL
 //////////////////////////////////////////////////////
 let transporter;
 
@@ -53,7 +50,7 @@ try {
 }
 
 //////////////////////////////////////////////////////
-// DB TEST (🔥 مهم جداً)
+// DB TEST
 //////////////////////////////////////////////////////
 (async () => {
   try {
@@ -66,7 +63,7 @@ try {
 })();
 
 //////////////////////////////////////////////////////
-// AUTH
+// AUTH MIDDLEWARE
 //////////////////////////////////////////////////////
 function auth(req, res, next) {
   const header = req.headers["authorization"];
@@ -103,21 +100,22 @@ function formatPhone(phone) {
 }
 
 //////////////////////////////////////////////////////
-// REGISTER (🔥 رجعنا username + OTP + بدون تخريب)
+// REGISTER (FIXED ✅)
 //////////////////////////////////////////////////////
 app.post("/api/auth/register", async (req, res) => {
-  let { username, phone, email, password } = req.body;
-
   try {
-    if (!username || !email || !password || password.length < 6 || !phone) {
+    let { username, email, password, phone } = req.body;
+
+    if (!username || !email || !password || !phone) {
       return res.status(400).json({
         success: false,
-        message: "بيانات غير صحيحة",
+        message: "كل الحقول مطلوبة",
       });
     }
 
     phone = formatPhone(phone);
 
+    // check existing
     const exist = await pool.query(
       "SELECT id FROM users WHERE email=$1 OR username=$2 OR phone=$3",
       [email, username, phone]
@@ -126,12 +124,14 @@ app.post("/api/auth/register", async (req, res) => {
     if (exist.rows.length > 0) {
       return res.status(400).json({
         success: false,
-        message: "الايميل أو اسم المستخدم أو الرقم مستخدم",
+        message: "المستخدم موجود مسبقاً",
       });
     }
 
+    // hash password
     const hashed = await bcrypt.hash(password, 10);
 
+    // create user
     const result = await pool.query(
       `INSERT INTO users(username, phone, email, password, is_verified)
        VALUES($1,$2,$3,$4,$5) RETURNING id`,
@@ -140,6 +140,7 @@ app.post("/api/auth/register", async (req, res) => {
 
     const userId = result.rows[0].id;
 
+    // create wallet
     await pool.query(
       "INSERT INTO wallets(user_id, balance) VALUES($1,$2)",
       [userId, 0]
@@ -147,7 +148,7 @@ app.post("/api/auth/register", async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "تم إنشاء الحساب",
+      message: "تم إنشاء الحساب بنجاح",
     });
 
   } catch (e) {
@@ -160,12 +161,12 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 //////////////////////////////////////////////////////
-// LOGIN (🔥 أقوى نسخة)
+// LOGIN (UPDATED 🔥)
 //////////////////////////////////////////////////////
 app.post("/api/auth/login", async (req, res) => {
-  let { username, email, phone, password } = req.body;
-
   try {
+    let { username, email, phone, password } = req.body;
+
     if (!password) {
       return res.status(400).json({
         success: false,
