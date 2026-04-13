@@ -53,6 +53,7 @@ try {
     host: "smtp.gmail.com",
     port: 587,
     secure: false,
+    family: 4, // 🔥 يجبر استخدام IPv4 (حل مشكلة Railway)
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
@@ -121,7 +122,7 @@ function formatPhone(phone) {
 }
 
 //////////////////////////////////////////////////////
-// REGISTER (🔥 تم التعديل هنا فقط)
+// REGISTER
 //////////////////////////////////////////////////////
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -129,7 +130,6 @@ app.post("/api/auth/register", async (req, res) => {
 
     let { username, name, email, password, phone } = req.body;
 
-    // دعم name بدل username
     const finalUsername = username || name;
 
     if (!finalUsername || !email || !password || !phone) {
