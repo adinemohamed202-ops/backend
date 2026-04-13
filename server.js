@@ -28,7 +28,7 @@ async function sendEmail(to, subject, message) {
       from: "onboarding@resend.dev",
       to,
       subject,
-      html: <p>${message}</p>,
+      html:` <p>${message}</p>`,
     });
 
     console.log("📩 Email sent:", data);
