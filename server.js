@@ -18,35 +18,32 @@ app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
 //////////////////////////////////////////////////////
-// EMAIL SETUP (FINAL FIX 🔥🔥🔥)
+// EMAIL SETUP
 //////////////////////////////////////////////////////
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 587,
   secure: false,
-
   family: 4,
-
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS.trim(),
   },
-
   tls: {
     rejectUnauthorized: false,
   },
 });
 
 //////////////////////////////////////////////////////
-// SEND EMAIL FUNCTION
+// SEND EMAIL
 //////////////////////////////////////////////////////
 async function sendEmail(to, subject, message) {
   try {
     const info = await transporter.sendMail({
-      from:`"Awda App" <${process.env.EMAIL_USER}>`,
+      from:` "Awda App" <${process.env.EMAIL_USER}>`,
       to: to,
       subject: subject,
-      html:`<p>${message}</p>`
+      html: <p>${message}</p>,
     });
 
     console.log("📩 Email sent:", info.response);
@@ -69,7 +66,7 @@ app.get("/", (req, res) => {
 app.get("/api/test", (req, res) => {
   res.json({
     success: true,
-    message: "API works 100%"
+    message: "API works 100%",
   });
 });
 
@@ -99,7 +96,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "secret";
 })();
 
 //////////////////////////////////////////////////////
-// AUTH MIDDLEWARE
+// AUTH
 //////////////////////////////////////////////////////
 function auth(req, res, next) {
   const header = req.headers["authorization"];
@@ -136,34 +133,39 @@ function formatPhone(phone) {
 }
 
 //////////////////////////////////////////////////////
-// REGISTER
+// REGISTER (UPDATED)
 //////////////////////////////////////////////////////
 app.post("/api/auth/register", async (req, res) => {
   try {
     console.log("📥 Register request:", req.body);
 
-    let { username, name, email, password, phone } = req.body;
+    let { username, email, password, phone } = req.body;
 
-    const finalUsername = username || name;
-
-    if (!finalUsername || !email || !password || !phone) {
+    if (!username || !email || !password || !phone) {
       return res.status(400).json({
         success: false,
         message: "كل الحقول مطلوبة",
       });
     }
 
+    if (!/^[a-z0-9]{3,20}$/.test(username)) {
+      return res.status(400).json({
+        success: false,
+        message: "اسم المستخدم غير صالح",
+      });
+    }
+
     phone = formatPhone(phone);
 
     const exist = await pool.query(
-      "SELECT id FROM users WHERE email=$1 OR username=$2 OR phone=$3",
-      [email, finalUsername, phone]
+      "SELECT id FROM users WHERE username=$1 OR email=$2 OR phone=$3",
+      [username, email, phone]
     );
 
     if (exist.rows.length > 0) {
       return res.status(400).json({
         success: false,
-        message: "المستخدم موجود مسبقاً",
+        message: "الاسم أو الإيميل أو الرقم مستخدم",
       });
     }
 
@@ -171,8 +173,9 @@ app.post("/api/auth/register", async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO users(username, phone, email, password, is_verified)
-       VALUES($1,$2,$3,$4,$5) RETURNING id, username, email, phone`,
-      [finalUsername, phone, email, hashed, true]
+       VALUES($1,$2,$3,$4,$5)
+       RETURNING id, username, email, phone`,
+      [username, phone, email, hashed, true]
     );
 
     const user = result.rows[0];
@@ -182,17 +185,17 @@ app.post("/api/auth/register", async (req, res) => {
       [user.id, 0]
     );
 
-    // 🔥 EMAIL (ما يوقع التسجيل)
-    sendEmail(
-      email,
-      "Welcome",
-      "تم إنشاء حسابك بنجاح 🚀"
+    const token = jwt.sign(
+      { id: user.id, phone: user.phone },
+      JWT_SECRET,
+      { expiresIn: "7d" }
     );
 
     return res.status(201).json({
       success: true,
-      message: "تم إنشاء الحساب بنجاح",
-      user: user,
+      message: "تم إنشاء الحساب",
+      token,
+      user,
     });
 
   } catch (e) {
@@ -279,6 +282,50 @@ app.post("/api/auth/login", async (req, res) => {
       success: false,
       message: "خطأ في السيرفر",
     });
+  }
+});
+
+//////////////////////////////////////////////////////
+// FORGOT PASSWORD (ADDED 🔥)
+//////////////////////////////////////////////////////
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await pool.query(
+      "SELECT * FROM users WHERE email=$1",
+      [email]
+    );
+
+    if (user.rows.length === 0) {
+      return res.json({
+        success: true,
+        message: "لو الإيميل موجود ح يصلك رابط",
+      });
+    }
+
+    const token = jwt.sign(
+      { id: user.rows[0].id },
+      JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    const resetLink = `https://yourapp.com/reset-password/${token}`;
+
+    await sendEmail(
+      email,
+      `"Reset Password",
+      اضغط هنا لتغيير كلمة المرور: ${resetLink}`
+    );
+
+    return res.json({
+      success: true,
+      message: "تم إرسال رابط التغيير",
+    });
+
+  } catch (e) {
+    console.log("❌ Forgot error:", e);
+    res.status(500).json({ success: false });
   }
 });
 
