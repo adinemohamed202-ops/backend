@@ -8,7 +8,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
 const app = express();
 app.use(cors());
@@ -18,6 +18,27 @@ app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
 //////////////////////////////////////////////////////
+// RESEND EMAIL SETUP 🔥
+//////////////////////////////////////////////////////
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+async function sendEmail(to, subject, message) {
+  try {
+    const data = await resend.emails.send({
+      from: "onboarding@resend.dev",
+      to,
+      subject,
+      html: <p>${message}</p>,
+    });
+
+    console.log("📩 Email sent:", data);
+    return data;
+  } catch (err) {
+    console.log("❌ Email error:", err.message);
+  }
+}
+
+//////////////////////////////////////////////////////
 // ROOT (مهم جداً)
 //////////////////////////////////////////////////////
 app.get("/", (req, res) => {
@@ -25,7 +46,7 @@ app.get("/", (req, res) => {
 });
 
 //////////////////////////////////////////////////////
-// ✅ TEST API (أضفناه هنا)
+// TEST API
 //////////////////////////////////////////////////////
 app.get("/api/test", (req, res) => {
   res.json({
@@ -45,33 +66,6 @@ app.use("/api/company", companyRoutes);
 //////////////////////////////////////////////////////
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
-
-//////////////////////////////////////////////////////
-// EMAIL (🔥 تم التعديل هنا فقط)
-//////////////////////////////////////////////////////
-let transporter;
-
-try {
-  transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
-
-  transporter.verify((error) => {
-    if (error) {
-      console.log("❌ Email error:", error.message);
-    } else {
-      console.log("📩 Email server ready");
-    }
-  });
-} catch (e) {
-  console.log("❌ Email setup failed");
-}
 
 //////////////////////////////////////////////////////
 // DB TEST
@@ -168,6 +162,13 @@ app.post("/api/auth/register", async (req, res) => {
     await pool.query(
       "INSERT INTO wallets(user_id, balance) VALUES($1,$2)",
       [user.id, 0]
+    );
+
+    // 🔥 إرسال إيميل ترحيبي
+    await sendEmail(
+      email,
+      "Welcome",
+      "تم إنشاء حسابك بنجاح 🚀"
     );
 
     return res.status(201).json({
@@ -288,7 +289,7 @@ app.get("/api/wallet", auth, async (req, res) => {
 });
 
 //////////////////////////////////////////////////////
-// GLOBAL ERROR HANDLER 🔥
+// ERROR HANDLER
 //////////////////////////////////////////////////////
 app.use((err, req, res, next) => {
   console.error("🔥 Global error:", err);
@@ -299,7 +300,7 @@ app.use((err, req, res, next) => {
 });
 
 //////////////////////////////////////////////////////
-// 404 HANDLER
+// 404
 //////////////////////////////////////////////////////
 app.use((req, res) => {
   res.status(404).json({
@@ -316,7 +317,7 @@ app.listen(PORT, "0.0.0.0", () => {
 });
 
 //////////////////////////////////////////////////////
-// PREVENT CRASH 🔥🔥🔥
+// CRASH PROTECTION
 //////////////////////////////////////////////////////
 process.on("uncaughtException", (err) => {
   console.error("💥 Uncaught Exception:", err);
