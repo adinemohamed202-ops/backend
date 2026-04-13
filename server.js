@@ -8,7 +8,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
-const { Resend } = require("resend");
+const nodemailer = require("nodemailer");
 
 const app = express();
 app.use(cors());
@@ -18,28 +18,36 @@ app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
 //////////////////////////////////////////////////////
-// RESEND EMAIL SETUP 🔥
+// EMAIL SETUP (GMAIL APP PASSWORD) 🔥 FIXED
 //////////////////////////////////////////////////////
-const resend = new Resend(process.env.RESEND_API_KEY);
+const transporter = nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS.replace(/\s/g, ""), // مهم جداً
+  },
+});
 
 async function sendEmail(to, subject, message) {
   try {
-    const data = await resend.emails.send({
-      from: "onboarding@resend.dev",
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_USER,
       to,
       subject,
-      html:` <p>${message}</p>`,
+      html: <p>${message}</p>,
     });
 
-    console.log("📩 Email sent:", data);
-    return data;
+    console.log("📩 Email sent:", info.response);
+    return info;
   } catch (err) {
     console.log("❌ Email error:", err.message);
   }
 }
 
 //////////////////////////////////////////////////////
-// ROOT (مهم جداً)
+// ROOT
 //////////////////////////////////////////////////////
 app.get("/", (req, res) => {
   res.send("🚀 API is running");
@@ -164,7 +172,7 @@ app.post("/api/auth/register", async (req, res) => {
       [user.id, 0]
     );
 
-    // 🔥 إرسال إيميل ترحيبي
+    // 🔥 EMAIL FIXED (GMAIL)
     await sendEmail(
       email,
       "Welcome",
