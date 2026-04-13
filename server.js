@@ -18,22 +18,33 @@ app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
 //////////////////////////////////////////////////////
-// EMAIL SETUP (GMAIL APP PASSWORD) 🔥 FIXED
+// EMAIL SETUP (FINAL FIX 🔥🔥🔥)
 //////////////////////////////////////////////////////
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 587,
   secure: false,
+
+  // 🔥 حل مشكلة Railway (IPv6)
+  family: 4,
+
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS.replace(/\s/g, ""), // مهم جداً
+    pass: process.env.EMAIL_PASS.trim(),
+  },
+
+  tls: {
+    rejectUnauthorized: false,
   },
 });
 
+//////////////////////////////////////////////////////
+// SEND EMAIL FUNCTION
+//////////////////////////////////////////////////////
 async function sendEmail(to, subject, message) {
   try {
     const info = await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: `"Awda App" <${process.env.EMAIL_USER}`>
       to,
       subject,
       html: `<p>${message}</p>,`
@@ -42,7 +53,7 @@ async function sendEmail(to, subject, message) {
     console.log("📩 Email sent:", info.response);
     return info;
   } catch (err) {
-    console.log("❌ Email error:", err.message);
+    console.log("❌ Email error:", err);
   }
 }
 
@@ -172,7 +183,7 @@ app.post("/api/auth/register", async (req, res) => {
       [user.id, 0]
     );
 
-    // 🔥 EMAIL FIXED (GMAIL)
+    // 🔥 EMAIL
     await sendEmail(
       email,
       "Welcome",
