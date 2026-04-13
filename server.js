@@ -25,7 +25,6 @@ const transporter = nodemailer.createTransport({
   port: 587,
   secure: false,
 
-  // 🔥 حل مشكلة Railway (IPv6)
   family: 4,
 
   auth: {
@@ -44,10 +43,10 @@ const transporter = nodemailer.createTransport({
 async function sendEmail(to, subject, message) {
   try {
     const info = await transporter.sendMail({
-      from: `"Awda App" <${process.env.EMAIL_USER}`>
-      to,
-      subject,
-      html: `<p>${message}</p>,`
+      from:`"Awda App" <${process.env.EMAIL_USER}>`,
+      to: to,
+      subject: subject,
+      html:`<p>${message}</p>`
     });
 
     console.log("📩 Email sent:", info.response);
@@ -183,8 +182,8 @@ app.post("/api/auth/register", async (req, res) => {
       [user.id, 0]
     );
 
-    // 🔥 EMAIL
-    await sendEmail(
+    // 🔥 EMAIL (ما يوقع التسجيل)
+    sendEmail(
       email,
       "Welcome",
       "تم إنشاء حسابك بنجاح 🚀"
