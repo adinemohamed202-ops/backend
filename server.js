@@ -119,15 +119,18 @@ function formatPhone(phone) {
 }
 
 //////////////////////////////////////////////////////
-// REGISTER
+// REGISTER (🔥 تم التعديل هنا فقط)
 //////////////////////////////////////////////////////
 app.post("/api/auth/register", async (req, res) => {
   try {
     console.log("📥 Register request:", req.body);
 
-    let { username, email, password, phone } = req.body;
+    let { username, name, email, password, phone } = req.body;
 
-    if (!username || !email || !password || !phone) {
+    // دعم name بدل username
+    const finalUsername = username || name;
+
+    if (!finalUsername || !email || !password || !phone) {
       return res.status(400).json({
         success: false,
         message: "كل الحقول مطلوبة",
@@ -138,7 +141,7 @@ app.post("/api/auth/register", async (req, res) => {
 
     const exist = await pool.query(
       "SELECT id FROM users WHERE email=$1 OR username=$2 OR phone=$3",
-      [email, username, phone]
+      [email, finalUsername, phone]
     );
 
     if (exist.rows.length > 0) {
@@ -153,7 +156,7 @@ app.post("/api/auth/register", async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users(username, phone, email, password, is_verified)
        VALUES($1,$2,$3,$4,$5) RETURNING id, username, email, phone`,
-      [username, phone, email, hashed, true]
+      [finalUsername, phone, email, hashed, true]
     );
 
     const user = result.rows[0];
