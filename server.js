@@ -36,7 +36,7 @@ async function sendEmail(to, subject, message) {
       from: process.env.EMAIL_USER,
       to,
       subject,
-      html: <p>${message}</p>,
+      html: `<p>${message}</p>,`
     });
 
     console.log("📩 Email sent:", info.response);
