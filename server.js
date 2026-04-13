@@ -22,6 +22,16 @@ app.get("/", (req, res) => {
 });
 
 //////////////////////////////////////////////////////
+// ✅ TEST API (أضفناه هنا)
+//////////////////////////////////////////////////////
+app.get("/api/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "API works 100%"
+  });
+});
+
+//////////////////////////////////////////////////////
 // ROUTES
 //////////////////////////////////////////////////////
 const companyRoutes = require("./routes/company");
@@ -113,6 +123,8 @@ function formatPhone(phone) {
 //////////////////////////////////////////////////////
 app.post("/api/auth/register", async (req, res) => {
   try {
+    console.log("📥 Register request:", req.body);
+
     let { username, email, password, phone } = req.body;
 
     if (!username || !email || !password || !phone) {
@@ -140,24 +152,25 @@ app.post("/api/auth/register", async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO users(username, phone, email, password, is_verified)
-       VALUES($1,$2,$3,$4,$5) RETURNING id`,
+       VALUES($1,$2,$3,$4,$5) RETURNING id, username, email, phone`,
       [username, phone, email, hashed, true]
     );
 
-    const userId = result.rows[0].id;
+    const user = result.rows[0];
 
     await pool.query(
       "INSERT INTO wallets(user_id, balance) VALUES($1,$2)",
-      [userId, 0]
+      [user.id, 0]
     );
 
     return res.status(201).json({
       success: true,
       message: "تم إنشاء الحساب بنجاح",
+      user: user,
     });
 
   } catch (e) {
-    console.error("❌ Register error:", e.message);
+    console.error("❌ Register error:", e);
     return res.status(500).json({
       success: false,
       message: "خطأ في السيرفر",
@@ -170,6 +183,8 @@ app.post("/api/auth/register", async (req, res) => {
 //////////////////////////////////////////////////////
 app.post("/api/auth/login", async (req, res) => {
   try {
+    console.log("📥 Login request:", req.body);
+
     let { username, email, phone, password } = req.body;
 
     if (!password) {
@@ -233,7 +248,7 @@ app.post("/api/auth/login", async (req, res) => {
     });
 
   } catch (e) {
-    console.log("❌ Login error:", e.message);
+    console.log("❌ Login error:", e);
     return res.status(500).json({
       success: false,
       message: "خطأ في السيرفر",
@@ -266,6 +281,17 @@ app.get("/api/wallet", auth, async (req, res) => {
 });
 
 //////////////////////////////////////////////////////
+// GLOBAL ERROR HANDLER 🔥
+//////////////////////////////////////////////////////
+app.use((err, req, res, next) => {
+  console.error("🔥 Global error:", err);
+  res.status(500).json({
+    success: false,
+    message: "Internal Server Error",
+  });
+});
+
+//////////////////////////////////////////////////////
 // 404 HANDLER
 //////////////////////////////////////////////////////
 app.use((req, res) => {
@@ -280,4 +306,15 @@ app.use((req, res) => {
 //////////////////////////////////////////////////////
 app.listen(PORT, "0.0.0.0", () => {
   console.log("🚀 Server running on port " + PORT);
+});
+
+//////////////////////////////////////////////////////
+// PREVENT CRASH 🔥🔥🔥
+//////////////////////////////////////////////////////
+process.on("uncaughtException", (err) => {
+  console.error("💥 Uncaught Exception:", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("💥 Unhandled Rejection:", err);
 });
